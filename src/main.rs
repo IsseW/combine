@@ -3,8 +3,8 @@ mod ui;
 
 use std::f32::consts::PI;
 
-use bevy::{ecs::{query::QueryEntityError}, prelude::*, render::camera::ScalingMode, sprite::Anchor};
-use body::{BodyBundle, Stats, Body, Limb, random_body};
+use bevy::{ecs::query::QueryEntityError, prelude::*, render::camera::ScalingMode, sprite::Anchor};
+use body::{random_body, Body, BodyBundle, Limb, Stats};
 use smallmap::Map;
 use ui::UseSkill;
 
@@ -63,7 +63,6 @@ fn do_animation(
 ) {
     let [(stats, children), (enemy_stats, _)] = stats.get_many([entity, enemy]).unwrap();
 
-    
     let (mut position, mut direction) = {
         let transform = transforms.get(entity).unwrap();
 
@@ -86,7 +85,15 @@ fn do_animation(
 
     let dt = time.delta_seconds();
 
-    fn walk(position: &mut f32, direction: f32, mul: f32, dt: f32, stats: &Stats, animation: &Animation, body_parts: &mut BodyTransforms) {
+    fn walk(
+        position: &mut f32,
+        direction: f32,
+        mul: f32,
+        dt: f32,
+        stats: &Stats,
+        animation: &Animation,
+        body_parts: &mut BodyTransforms,
+    ) {
         *position += dt * stats.speed * direction * mul;
         const END_TIME: f32 = 0.1;
         if animation.progress < 1.0 - END_TIME {
@@ -118,11 +125,27 @@ fn do_animation(
 
     match &stats.skills[animation.skill] {
         body::Skill::WalkBackward => {
-            walk(&mut position, direction, -0.5, dt, stats, animation, &mut body_parts);
-        },
+            walk(
+                &mut position,
+                direction,
+                -0.5,
+                dt,
+                stats,
+                animation,
+                &mut body_parts,
+            );
+        }
         body::Skill::WalkForward => {
-            walk(&mut position, direction, 1.0, dt, stats, animation, &mut body_parts);
-        },
+            walk(
+                &mut position,
+                direction,
+                1.0,
+                dt,
+                stats,
+                animation,
+                &mut body_parts,
+            );
+        }
         body::Skill::TurnAround => {
             if animation.progress <= 0.5 {
                 let t = 1.0 - animation.progress * 2.0;
@@ -131,13 +154,13 @@ fn do_animation(
                 let t = animation.progress * 2.0 - 1.0;
                 direction = direction * (1.0 - t) + t * direction.signum();
             }
-        },
+        }
         body::Skill::BasicMelee(ability) => {
             let mut transform = body_parts.get_mut(ability.limb);
-            
+
             let a = (animation.progress * PI).sin();
             transform.rotation = Quat::from_rotation_z(a);
-        },
+        }
         body::Skill::BasicRanged(_) => todo!(),
         body::Skill::Scan(_) => todo!(),
     }
@@ -145,9 +168,11 @@ fn do_animation(
     {
         let [mut transform, enemy] = transforms.get_many_mut([entity, enemy]).unwrap();
         if transform.translation.x < enemy.translation.x {
-            transform.translation.x = position.min(enemy.translation.x - (stats.width + enemy_stats.width) / 2.0 - 0.1);
+            transform.translation.x =
+                position.min(enemy.translation.x - (stats.width + enemy_stats.width) / 2.0 - 0.1);
         } else {
-            transform.translation.x = position.max(enemy.translation.x + (stats.width + enemy_stats.width) / 2.0 + 0.1);
+            transform.translation.x =
+                position.max(enemy.translation.x + (stats.width + enemy_stats.width) / 2.0 + 0.1);
         }
         transform.scale.x = direction;
     }
@@ -166,7 +191,15 @@ fn use_skill_system(
     mut maybe_animation: Local<Option<Animation>>,
 ) {
     if let Some(animation) = maybe_animation.as_mut() {
-        do_animation(game.player, game.enemy, stats, animation, limbs, transforms, &time);
+        do_animation(
+            game.player,
+            game.enemy,
+            stats,
+            animation,
+            limbs,
+            transforms,
+            &time,
+        );
         if animation.progress > 1.0 {
             *maybe_animation = None;
             **use_skill = None;
@@ -200,19 +233,41 @@ fn scene_setup_system(mut commands: Commands) {
         },
         ..default()
     });
-    let player = commands.spawn_bundle(BodyBundle {
-        // body: random_body(&mut rand::thread_rng()),
-        transform: Transform::from_translation(Vec3::new(-4.0, 0.0, 0.0)),
-        ..default()
-    }).id();
+    let player = commands
+        .spawn_bundle(BodyBundle {
+            // body: random_body(&mut rand::thread_rng()),
+            transform: Transform::from_translation(Vec3::new(-4.0, 0.0, 0.0)),
+            ..default()
+        })
+        .id();
 
-    let enemy = commands.spawn_bundle(BodyBundle {
-        body: random_body(&mut rand::thread_rng()),
-        transform: Transform::from_translation(Vec3::new(4.0, 0.0, 0.0)),
-        ..default()
-    }).id();
+    let enemy = commands
+        .spawn_bundle(BodyBundle {
+            body: random_body(&mut rand::thread_rng()),
+            transform: Transform::from_translation(Vec3::new(4.0, 0.0, 0.0)),
+            ..default()
+        })
+        .id();
 
     commands.insert_resource(Game { player, enemy });
+}
+
+fn dynamic_camera(
+    game: Res<Game>,
+    mut camera_transform: Query<&mut Transform, With<Camera>>,
+    transforms: Query<&Transform, Without<Camera>>,
+) {
+    let player = game.player;
+    let enemy = game.enemy;
+    let mut camera_transform = camera_transform.single_mut();
+    let player_transform = transforms.get(player).unwrap();
+    let enemy_transform = transforms.get(enemy).unwrap();
+    let vector_between = enemy_transform.translation - player_transform.translation;
+    let distance_between = vector_between.length();
+    let look_at_pos = player_transform.translation + vector_between / 2.0;
+    camera_transform.translation.x = look_at_pos.x;
+    camera_transform.translation.y = look_at_pos.y;
+    camera_transform.scale = Vec3::splat(distance_between / 6.0 + 8.0);
 }
 
 fn main() {
@@ -223,5 +278,6 @@ fn main() {
         .add_system(bevy::window::close_on_esc)
         .add_startup_system(scene_setup_system)
         .add_system(use_skill_system)
+        .add_system(dynamic_camera)
         .run();
 }
