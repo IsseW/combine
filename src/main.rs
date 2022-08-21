@@ -3,8 +3,8 @@ mod ui;
 
 use std::f32::consts::PI;
 
-use bevy::{ecs::query::QueryEntityError, prelude::*, render::camera::ScalingMode, sprite::Anchor};
-use body::{random_body, Body, BodyBundle, Limb, Stats};
+use bevy::{prelude::*, render::camera::ScalingMode, sprite::Anchor};
+use body::{random_body, BodyBundle, Limb, Stats};
 use smallmap::Map;
 use ui::UseSkill;
 
